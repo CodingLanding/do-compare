@@ -2,16 +2,33 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { FileText, Upload, LogOut, Loader2 } from 'lucide-react'
+import { FileText, Upload, LogOut, Loader2, CheckCircle, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { createClient } from '@/lib/supabase'
+
+type ComparisonResult = {
+  stats: {
+    additions: number
+    deletions: number
+    unchanged: number
+    totalChanges: number
+  }
+  changes: Array<{
+    type: 'addition' | 'deletion'
+    text: string
+    preview: string
+  }>
+}
 
 export default function ComparePage() {
   const router = useRouter()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [comparing, setComparing] = useState(false)
   const [doc1, setDoc1] = useState<File | null>(null)
   const [doc2, setDoc2] = useState<File | null>(null)
+  const [result, setResult] = useState<ComparisonResult | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   // Check authentication
   useEffect(() => {
@@ -63,10 +80,11 @@ export default function ComparePage() {
     } else {
       setDoc2(file)
     }
-  }
 
-  const [comparing, setComparing] = useState(false)
-  const [result, setResult] = useState<any>(null)
+    // Reset results when new files are uploaded
+    setResult(null)
+    setError(null)
+  }
 
   const handleCompare = async () => {
     if (!doc1 || !doc2) {
@@ -75,6 +93,7 @@ export default function ComparePage() {
     }
 
     setComparing(true)
+    setError(null)
     setResult(null)
 
     try {
@@ -84,18 +103,18 @@ export default function ComparePage() {
 
       const response = await fetch('/api/compare', {
         method: 'POST',
-        body: formData,
+        body: formData
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to compare documents')
+        throw new Error(data.error || 'Comparison failed')
       }
 
       setResult(data)
-    } catch (error: any) {
-      alert(error.message || 'Failed to compare documents')
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during comparison')
     } finally {
       setComparing(false)
     }
@@ -250,29 +269,141 @@ export default function ComparePage() {
         </div>
 
         {/* Compare Button */}
-        <div className="text-center">
+        <div className="text-center mb-8">
           <Button
             onClick={handleCompare}
-            disabled={!doc1 || !doc2}
+            disabled={!doc1 || !doc2 || comparing}
             size="lg"
             className="bg-[#1E3A8A] hover:bg-[#3B82F6] text-white text-lg px-12 h-14"
           >
-            <FileText className="w-5 h-5 mr-2" />
-            Compare Documents
+            {comparing ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Comparing...
+              </>
+            ) : (
+              <>
+                <FileText className="w-5 h-5 mr-2" />
+                Compare Documents
+              </>
+            )}
           </Button>
         </div>
 
+        {/* Error Message */}
+        {error && (
+          <div className="bg-[#EF4444]/10 border border-[#EF4444] rounded-lg p-4 mb-8">
+            <p className="text-[#EF4444] text-center">{error}</p>
+          </div>
+        )}
+
+        {/* Results Section */}
+        {result && (
+          <div className="space-y-6">
+            {/* Statistics */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-[24px] font-semibold text-[#0F172A] mb-4">
+                Comparison Results
+              </h2>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="bg-[#10B981]/10 border border-[#10B981] rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle className="w-5 h-5 text-[#10B981]" />
+                    <span className="text-sm font-medium text-[#0F172A]">Additions</span>
+                  </div>
+                  <p className="text-2xl font-bold text-[#10B981]">
+                    {result.stats.additions.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-[#475569] mt-1">characters added</p>
+                </div>
+
+                <div className="bg-[#EF4444]/10 border border-[#EF4444] rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <XCircle className="w-5 h-5 text-[#EF4444]" />
+                    <span className="text-sm font-medium text-[#0F172A]">Deletions</span>
+                  </div>
+                  <p className="text-2xl font-bold text-[#EF4444]">
+                    {result.stats.deletions.toLocaleString()}
+                  </p>
+                  <p className="text-xs text-[#475569] mt-1">characters removed</p>
+                </div>
+
+                <div className="bg-[#3B82F6]/10 border border-[#3B82F6] rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <FileText className="w-5 h-5 text-[#3B82F6]" />
+                    <span className="text-sm font-medium text-[#0F172A]">Total Changes</span>
+                  </div>
+                  <p className="text-2xl font-bold text-[#3B82F6]">
+                    {result.stats.totalChanges}
+                  </p>
+                  <p className="text-xs text-[#475569] mt-1">modifications detected</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Changes List */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-[24px] font-semibold text-[#0F172A] mb-4">
+                Detailed Changes
+              </h2>
+              
+              {result.changes.length === 0 ? (
+                <p className="text-[#475569] text-center py-8">
+                  No changes detected between the documents.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-[600px] overflow-y-auto">
+                  {result.changes.map((change, index) => (
+                    <div
+                      key={index}
+                      className={`p-4 rounded-lg border ${
+                        change.type === 'addition'
+                          ? 'bg-[#10B981]/5 border-[#10B981]'
+                          : 'bg-[#EF4444]/5 border-[#EF4444]'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {change.type === 'addition' ? (
+                          <>
+                            <CheckCircle className="w-4 h-4 text-[#10B981]" />
+                            <span className="text-sm font-medium text-[#10B981]">
+                              Added
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-4 h-4 text-[#EF4444]" />
+                            <span className="text-sm font-medium text-[#EF4444]">
+                              Removed
+                            </span>
+                          </>
+                        )}
+                      </div>
+                      <p className="text-sm text-[#0F172A] whitespace-pre-wrap">
+                        {change.preview}
+                        {change.text.length > 200 && '...'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Info Box */}
-        <div className="mt-12 bg-[#3B82F6]/10 border border-[#3B82F6] rounded-lg p-6">
-          <h3 className="text-[18px] font-semibold text-[#0F172A] mb-2">
-            Supported Formats
-          </h3>
-          <ul className="text-sm text-[#475569] space-y-1">
-            <li>• PDF documents (.pdf)</li>
-            <li>• Microsoft Word (.doc, .docx)</li>
-            <li>• Maximum file size: 10MB per document</li>
-          </ul>
-        </div>
+        {!result && (
+          <div className="bg-[#3B82F6]/10 border border-[#3B82F6] rounded-lg p-6">
+            <h3 className="text-[18px] font-semibold text-[#0F172A] mb-2">
+              Supported Formats
+            </h3>
+            <ul className="text-sm text-[#475569] space-y-1">
+              <li>• PDF documents (.pdf)</li>
+              <li>• Microsoft Word (.doc, .docx)</li>
+              <li>• Maximum file size: 10MB per document</li>
+            </ul>
+          </div>
+        )}
       </main>
     </div>
   )
