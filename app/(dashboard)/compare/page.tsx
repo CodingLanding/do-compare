@@ -65,14 +65,40 @@ export default function ComparePage() {
     }
   }
 
+  const [comparing, setComparing] = useState(false)
+  const [result, setResult] = useState<any>(null)
+
   const handleCompare = async () => {
     if (!doc1 || !doc2) {
       alert('Please upload both documents')
       return
     }
 
-    // TODO: Implement document comparison
-    alert('Document comparison coming soon!')
+    setComparing(true)
+    setResult(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('doc1', doc1)
+      formData.append('doc2', doc2)
+
+      const response = await fetch('/api/compare', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to compare documents')
+      }
+
+      setResult(data)
+    } catch (error: any) {
+      alert(error.message || 'Failed to compare documents')
+    } finally {
+      setComparing(false)
+    }
   }
 
   if (loading) {
